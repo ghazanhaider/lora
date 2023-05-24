@@ -1,0 +1,125 @@
+Requirements:
+radio driver files
+HAL
+
+========================================================
+main() calls:
+  MX_SubGHz_Phy_Init() once and
+  MX_SubGHz_Phy_Process() forever
+
+// from subghz_phy_app.h
+
+#define PAYLOAD_LEN                                 64
+#define RF_FREQUENCY                                433000000//869100000 /* Hz */
+#define TX_OUTPUT_POWER                             14        /* dBm */
+#define LORA_BANDWIDTH                              0         /* [0: 125 kHz, 1: 250 kHz, 2: 500 kHz, 3: Reserved] */
+#define LORA_SPREADING_FACTOR                       7         /* [SF7..SF12] */
+#define LORA_CODINGRATE                             1         /* [1: 4/5, 2: 4/6, 3: 4/7, 4: 4/8] */
+#define LORA_PREAMBLE_LENGTH                        8         /* Same for Tx and Rx */
+#define LORA_SYMBOL_TIMEOUT                         5         /* Symbols */
+#define LORA_FIX_LENGTH_PAYLOAD_ON                  false
+#define LORA_IQ_INVERSION_ON                        false
+
+
+// From subghz_phy_app.c
+
+#define RX_TIMEOUT_VALUE              2000
+#define TX_TIMEOUT_VALUE              3000
+/* Application buffer 255 max when USE_MODEM_LORA */
+#define MAX_APP_BUFFER_SIZE              255
+
+static __IO uint16_t payloadLen = PAYLOAD_LEN;
+#if (TEST_MODE == RADIO_TX)
+static uint16_t payloadLenMax = MAX_APP_BUFFER_SIZE;
+#endif /* TEST_MODE == RADIO_TX */
+
+static RadioEvents_t RadioEvents;
+
+uint8_t data_buffer[MAX_APP_BUFFER_SIZE] UTIL_MEM_ALIGN(4);
+
+// Define OnTxDone OnRxDone OnTxTimeout OnRxTimeout OnRxError
+// Instantiate Radio
+
+void SubghzApp_Init(void)
+{
+
+  /* Radio initialization */
+  RadioEvents.TxDone = OnTxDone;
+  RadioEvents.RxDone = OnRxDone;
+  RadioEvents.TxTimeout = OnTxTimeout;
+  RadioEvents.RxTimeout = OnRxTimeout;
+  RadioEvents.RxError = OnRxError;
+
+  Radio.Init(&RadioEvents);
+
+  /* USER CODE BEGIN SubghzApp_Init_2 */
+  /* Radio Set frequency */
+  Radio.SetChannel(RF_FREQUENCY);
+
+  data_offset = 0;
+
+#if (TEST_MODE == RADIO_RX)
+  Radio.SetRxConfig(MODEM_LORA, LORA_BANDWIDTH, LORA_SPREADING_FACTOR,
+                    LORA_CODINGRATE, 0, LORA_PREAMBLE_LENGTH,
+                    LORA_SYMBOL_TIMEOUT, LORA_FIX_LENGTH_PAYLOAD_ON,
+                    0, true, 0, 0, LORA_IQ_INVERSION_ON, true);
+
+  Radio.SetMaxPayloadLength(MODEM_LORA, MAX_APP_BUFFER_SIZE);
+
+  Radio.Rx(RX_TIMEOUT_VALUE);
+#elif (TEST_MODE == RADIO_TX)
+  tx_payload_generator();
+  Radio.SetTxConfig(MODEM_LORA, TX_OUTPUT_POWER, 0, LORA_BANDWIDTH,
+                    LORA_SPREADING_FACTOR, LORA_CODINGRATE,
+                    LORA_PREAMBLE_LENGTH, LORA_FIX_LENGTH_PAYLOAD_ON,
+                    true, 0, 0, LORA_IQ_INVERSION_ON, TX_TIMEOUT_VALUE);
+
+  Radio.SetMaxPayloadLength(MODEM_LORA, MAX_APP_BUFFER_SIZE);
+  Radio.Send(data_buffer, payloadLen);
+#endif /* TEST_MODE */
+  Per_Process();
+}
+
+// Duplicate these
+static void OnTxDone(void)
+{
+  /* USER CODE BEGIN OnTxDone */
+  RadioTxDone_flag = 1;
+  UTIL_SEQ_SetTask((1 << CFG_SEQ_Task_SubGHz_Phy_App_Process), CFG_SEQ_Prio_0);
+  /* USER CODE END OnTxDone */
+}
+
+
+// Do more work on RxDONE
+static void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t LoraSnr_FskCfo)
+{
+  /* USER CODE BEGIN OnRxDone */
+  last_rx_rssi = rssi;
+  last_rx_cfo = LoraSnr_FskCfo;
+
+  /* Set Rxdone flag */
+  RadioRxDone_flag = 1;
+  /* Run Per process in background*/
+  Per_Process();
+  memcpy(data_buffer, payload, size);
+  payloadLen = size;
+}
+
+
+
+===============================================================
+
+Interrupts:
+==========
+
+SUBGHZ_Radio_IRQHandler():                              in _it.c
+        HAL_SUBGHZ_IRQHandler(&hsubghz);
+
+
+
+
+
+// Questions?
+Whats payloadmax?
+why memcpy on RX
+what timer is used for TX?

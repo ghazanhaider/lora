@@ -1,0 +1,120 @@
+main() calls:
+  MX_SubGHz_Phy_Init() once and 
+  MX_SubGHz_Phy_Process() forever
+
+
+
+MX_SubGHz_Phy_Init():    	in app_subghz_phy.c
+	SystemApp_Init
+	SubghzApp_Init():		in subghz_phy_app.c
+		Radio.Init(struct &RadioEvents)
+		Radio.SetChannel(RF_FREQUENCY);
+		tx_payload_generator();
+		Radio.Send(data_buffer, payloadLen);
+		/*register task to to be run in while(1) after Radio IT*/
+		UTIL_SEQ_RegTask((1 << CFG_SEQ_Task_SubGHz_Phy_App_Process), UTIL_SEQ_RFU, Per_Process);
+		(where is TxConfig RxConfig Radio defined?)
+
+
+MX_SubGHz_Phy_Process():	in app_subghz_phy.c
+	UTIL_SEQ_Run(UTIL_SEQ_DEFAULT);    	calls Per_Process regularly and after each callback func
+
+
+Per_Process():			in subghz_phy_app.c
+	Increment packet counter
+	Toggle LEDs
+	tx_payload_generator()
+	Radio.Send(data_buffer, payloadLen);
+
+
+HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin):		in in subghz_phy_app.c
+	If button pressed in TX mode, change packet size
+
+
+=====================================================
+Interrupts:
+==========
+
+SUBGHZ_Radio_IRQHandler():				in _it.c
+	HAL_SUBGHZ_IRQHandler(&hsubghz);
+
+
+
+subghz.c is called from interrupt handlers and Middlewares/radio_drivers
+
+radio_driver.c:
+	Takes an external subghz handler
+	SUBGRF_Init()
+=====================================================
+Radio driver
+============
+
+radio.c
+	Inputs handler and calls other radio files and HAL functions
+
+
+RadioEvents: defined in radio_defs.h
+
+
+
+Radio_s: defined in radio.h. One instance: Radio
+	Init
+	GetStatus
+	SetModem
+	SetChannel
+	Is ChannelFree
+	Random
+
+	SetRXConfig:
+		modem
+		bandwidth
+		datarate
+		coderate
+		fixLen
+		payloadLen
+		crcOn
+		freqHopOn
+		rxContinuous
+
+	SetTXConfig:
+                modem
+		power
+		freq_deviation
+                bandwidth
+                datarate
+                coderate
+                fixLen
+                crcOn
+                freqHopOn
+                timeout
+
+	TimeOnAir: computes time on air in ms
+
+	Send
+
+	Sleep
+
+	Standby
+
+	Rx(timeout)
+
+
+
+
+
+
+
+=================
+
+app_subghz_phy.c
+
+- Has main interface that main calls
+
+
+subghz_phy_app.c
+- calls functions in radio.c
+================
+
+tx_payload_generator()
+- Fill data_buffer[] with some payload upto payloadLen
+
